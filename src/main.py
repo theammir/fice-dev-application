@@ -32,7 +32,7 @@ async def main() -> None:
     tmdb = TMDBSession(tmdb_token)
 
     dp = Dispatcher(tmdb=tmdb)
-    dp.include_routers(routers.movie_router, routers.error_router)
+    dp.include_routers(routers.error_router, routers.movie_router, routers.start_router)
 
     await bot.delete_webhook(drop_pending_updates=True)
 

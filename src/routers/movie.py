@@ -14,19 +14,14 @@ from aiogram.types import (
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
 )
 
 from tmdb import Movie, TMDBSession
 
+from .start import SPECIAL_SEARCH_TEXT, SPECIAL_TRENDING_TEXT, START_MARKUP
 router = Router(name="/movie")
 
-CANCEL_SPECIAL_TEXT = "✨ Cancel"
-CANCEL_MARKUP = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text=CANCEL_SPECIAL_TEXT)]],
-    is_persistent=True,
-    resize_keyboard=True,
-)
+SPECIAL_CANCEL_TEXT = "✨ Cancel"
 
 MOVIE_FORMAT_STR = """
 <b>Назва фільму</b>: {title} ({original_title})
@@ -54,19 +49,27 @@ class SearchState(StatesGroup):
     query = State()
 
 
+@router.message(F.text == SPECIAL_SEARCH_TEXT)
 @router.message(Command("search"))
 async def search_handler(message: Message, state: FSMContext) -> None:
     await state.set_state(SearchState.query)
-    await message.reply("🔎 Уведіть назву фільму:", reply_markup=CANCEL_MARKUP)
+
+    markup = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=SPECIAL_CANCEL_TEXT)]],
+        is_persistent=True,
+        resize_keyboard=True,
+    )
+
+    await message.reply("🔎 Уведіть назву фільму:", reply_markup=markup)
 
 
-@router.message(F.text == CANCEL_SPECIAL_TEXT)
+@router.message(F.text == SPECIAL_CANCEL_TEXT)
 async def search_cancel_handler(message: Message, state: FSMContext) -> None:
     if await state.get_state() is None:
         return
 
     await state.clear()
-    await message.reply("🔎 Скасовано", reply_markup=ReplyKeyboardRemove())
+    await message.reply("🔎 Скасовано", reply_markup=START_MARKUP)
 
 
 @router.message(SearchState.query, F.text)
@@ -86,7 +89,7 @@ async def search_process_query(
     await message.reply_photo(
         movie.poster_path,
         format_movie(movie),
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=START_MARKUP,
     )
 
 
@@ -124,6 +127,7 @@ def paginator_markup(current_index: int):
     )
 
 
+@router.message(F.text == SPECIAL_TRENDING_TEXT)
 @router.message(Command("trending"), F.from_user)
 async def trending_handler(message: Message, tmdb: TMDBSession):
     assert message.from_user is not None
@@ -131,8 +135,10 @@ async def trending_handler(message: Message, tmdb: TMDBSession):
     movies = await tmdb.get_trending_movies(time_window="week")
     if not movies:
         await message.reply(
-            "💢 Помилка під час отримання списку фільмів.\n\
-            Спробуйте ще раз через кілька секунд"
+            (
+                "💢 Помилка під час отримання списку фільмів.\n"
+                "Спробуйте ще раз через кілька секунд"
+            )
         )
         return
 

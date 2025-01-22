@@ -20,7 +20,7 @@ class Movie:
     original_title: str
     poster_path: str
     overview: str
-    genre_ids: list[int]  # TODO: Genre list
+    genres: list[str]
     release_date: str
     average_rating: float  # vote_average
     vote_count: int
@@ -28,6 +28,13 @@ class Movie:
     @staticmethod
     def from_json(json: dict[str, Any]):
         # WARN: Throws KeyError, caller's job to handle
+        genre_ids = json.get("genre_ids") or []
+        genres = list(
+            filter(
+                lambda g: g,
+                [TMDBSession.genre_table.get(g, "") for g in genre_ids],
+            )
+        )
         return Movie(
             json["title"],
             json["original_title"],
@@ -35,7 +42,7 @@ class Movie:
                 json["poster_path"].strip("/")
             ),  # TODO: Handle missing poster
             json.get("overview") or "Опис не знайдено.",
-            json.get("genre_ids") or [],
+            genres,
             json.get("release_date") or "відсутня",
             json.get("vote_average") or 0.0,
             json.get("vote_count") or 0,
@@ -49,6 +56,8 @@ class TMDBException(Exception):
 
 
 class TMDBSession:
+    genre_table: dict[int, str] = {}
+
     def __init__(self, api_token: str) -> None:
         self.__token = api_token
         self.__session = aiohttp.ClientSession(timeout=SESSION_TIMEOUT)
@@ -72,6 +81,17 @@ class TMDBSession:
 
             return json
 
+    async def _init_genres(self, language: str = DEFAULT_LANGUAGE):
+        if TMDBSession.genre_table:
+            return
+
+        json = await self._get_json(TMDB_GENRE_LIST_ENDPOINT, {"language": language})
+        genres = json.get("genres")
+        if not genres:
+            return
+
+        TMDBSession.genre_table = {g.get("id"): g.get("name") for g in genres}
+
     async def search_movie(
         self, query: str, *, language: str = DEFAULT_LANGUAGE
     ) -> Movie | None:
@@ -83,6 +103,7 @@ class TMDBSession:
         if not all((results, len(results), json.get("total_results"))):
             return None
 
+        await self._init_genres(language)
         return Movie.from_json(results[0])
 
     async def get_trending_movies(
@@ -98,5 +119,6 @@ class TMDBSession:
         if not all((results, len(results), json.get("total_results"))):
             return None
 
+        await self._init_genres(language)
         movies: list[Movie] = [Movie.from_json(r) for r in results]
         return movies

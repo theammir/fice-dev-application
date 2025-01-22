@@ -19,6 +19,7 @@ from aiogram.types import (
 from tmdb import Movie, TMDBSession
 
 from .start import SPECIAL_SEARCH_TEXT, SPECIAL_TRENDING_TEXT, START_MARKUP
+
 router = Router(name="/movie")
 
 SPECIAL_CANCEL_TEXT = "✨ Cancel"
@@ -38,7 +39,7 @@ def format_movie(movie: Movie) -> str:
         title=movie.title,
         original_title=movie.original_title,
         overview=movie.overview,
-        genres=movie.genre_ids,
+        genres=", ".join(movie.genres),
         release_date=movie.release_date.replace("-", "/"),
         rating=movie.average_rating,
         vote_count=movie.vote_count,

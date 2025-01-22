@@ -64,10 +64,10 @@ class TMDBSession:
             json = await resp.json()
 
             if resp.ok:
-                logging.info(f"[GET {code}] {endpoint} {params}")
+                logging.info("[GET %d] %s %r", code, endpoint, params)
             else:
-                logging.error(f"[GET {code}] {endpoint} {params}")
-                logging.error(json)
+                logging.error("[GET %d] %s %r", code, endpoint, params)
+                logging.error("%s", json)
                 raise TMDBException(json.get("status"), json.get("message"))
 
             return json

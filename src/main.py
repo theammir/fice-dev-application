@@ -10,6 +10,9 @@ from aiogram.dispatcher.dispatcher import Dispatcher, loggers
 from aiogram.enums import ParseMode
 from rich.logging import RichHandler
 
+import routers
+from tmdb import TMDBSession
+
 dotenv.load_dotenv()
 
 
@@ -22,7 +25,14 @@ async def main() -> None:
         bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
 
-    dp = Dispatcher()
+    tmdb_token = os.getenv("TMDB_AUTH_TOKEN")
+    if not tmdb_token:
+        raise ValueError("expected TMDB_AUTH_TOKEN in env")
+
+    tmdb = TMDBSession(tmdb_token)
+
+    dp = Dispatcher(tmdb=tmdb)
+    dp.include_router(routers.movie_router)
 
     await bot.delete_webhook(drop_pending_updates=True)
 

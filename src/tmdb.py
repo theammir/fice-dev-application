@@ -86,7 +86,10 @@ class TMDBSession:
         return Movie.from_json(results[0])
 
     async def get_trending_movies(
-        self, *, time_window: Literal["day", "week"], language: str = DEFAULT_LANGUAGE
+        self,
+        *,
+        time_window: Literal["day", "week"],
+        language: str = DEFAULT_LANGUAGE,
     ) -> list[Movie] | None:
         json = await self._get_json(
             TMDB_TRENDING_ENDPOINT.format(time_window), {"language": language}
@@ -95,5 +98,5 @@ class TMDBSession:
         if not all((results, len(results), json.get("total_results"))):
             return None
 
-        movies: list[Movie] = list(map(lambda r: Movie.from_json(r), results))
+        movies: list[Movie] = [Movie.from_json(r) for r in results]
         return movies

@@ -6,6 +6,7 @@ router = Router(name="/start")
 
 SPECIAL_SEARCH_TEXT = "🔍 Пошук за назвою"
 SPECIAL_TRENDING_TEXT = "📈 Популярні фільми"
+SPECIAL_FAVOURITES_TEXT = "⭐ Список обраного"
 SPECIAL_HELP_TEXT = " Інформація"
 
 START_MARKUP = ReplyKeyboardMarkup(
@@ -13,8 +14,11 @@ START_MARKUP = ReplyKeyboardMarkup(
         [
             KeyboardButton(text=SPECIAL_SEARCH_TEXT),
             KeyboardButton(text=SPECIAL_TRENDING_TEXT),
+        ],
+        [
+            KeyboardButton(text=SPECIAL_FAVOURITES_TEXT),
             KeyboardButton(text=SPECIAL_HELP_TEXT),
-        ]
+        ],
     ],
     resize_keyboard=True,
 )

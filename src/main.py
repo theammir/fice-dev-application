@@ -29,10 +29,10 @@ async def main() -> None:
     if not tmdb_token:
         raise ValueError("expected TMDB_AUTH_TOKEN in env")
     tmdb = TMDBSession(tmdb_token)
+    await tmdb.preload_genres()
 
     await Tortoise.init(db_url="sqlite://db.sqlite3", modules={"models": ["db.models"]})
     await Tortoise.generate_schemas()
-    await tmdb.preload_genres()
 
     dp = Dispatcher(tmdb=tmdb)
     dp.include_routers(*[getattr(routers, r) for r in routers.__all__])

@@ -4,13 +4,14 @@ from typing import Any, Literal
 import aiohttp
 from aiohttp.client import ClientTimeout
 
-from db.models import Genre, Movie
+from db.models import Movie
 
 SESSION_TIMEOUT = ClientTimeout(total=10)
 DEFAULT_LANGUAGE = "uk-UA"
 
 TMDB_SEARCH_ENDPOINT = "https://api.themoviedb.org/3/search/movie"
 TMDB_TRENDING_ENDPOINT = "https://api.themoviedb.org/3/trending/movie/{}"
+TMDB_DETAILS_ENDPOINT = "https://api.themoviedb.org/3/movie/{}"
 TMDB_GENRE_LIST_ENDPOINT = "https://api.themoviedb.org/3/genre/movie/list"
 TMDB_IMAGE_ENDPOINT = "https://image.tmdb.org/t/p/original/{}"
 
@@ -24,11 +25,17 @@ class TMDBException(Exception):
 
 
 class TMDBSession:
+    __genres_table: dict[int, str] = {}
+
     def __init__(self, api_token: str) -> None:
         self.__token = api_token
         self.__session = aiohttp.ClientSession(timeout=SESSION_TIMEOUT)
 
-    async def _get_json(self, endpoint: str, params: dict[str, Any]):
+    @staticmethod
+    def genre_name_of(id: int, default: Any) -> str | Any:
+        return TMDBSession.__genres_table.get(id, default)
+
+    async def _get_json(self, endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
         # WARN: Throws TMDBException, caller's job to handle
         headers = {
             "accept": "application/json",
@@ -41,6 +48,8 @@ class TMDBSession:
             if resp.ok:
                 logging.info("[GET %d] %s %r", code, endpoint, params)
             else:
+                if resp.status == 404:
+                    return {}
                 logging.error("[GET %d] %s %r", code, endpoint, params)
                 logging.error("%s", json)
                 raise TMDBException(json.get("status"), json.get("message"))
@@ -51,16 +60,11 @@ class TMDBSession:
         json = await self._get_json(TMDB_GENRE_LIST_ENDPOINT, {"language": language})
         genres = json.get("genres")
         if not genres:
-            return
+            raise RuntimeError("api didn't return valid genres list")
 
-        genres = {
+        TMDBSession.__genres_table = {
             id: name for g in genres if all([id := g.get("id"), name := g.get("name")])
         }
-
-        genre_objects = [Genre(id=id, name=name) for id, name in genres.items()]
-
-        await Genre.bulk_create(genre_objects, ignore_conflicts=True)
-        Genre.cache.update({g.id: g for g in genre_objects})
 
     def _format_movie_poster(self, movie: dict[str, Any]):
         if poster_path := movie.get("poster_path"):
@@ -68,6 +72,22 @@ class TMDBSession:
         else:
             movie["poster_path"] = POSTER_PLACEHOLDER_PATH
         return movie
+
+    async def get_movie_by_id(
+        self, id: int, language: str = DEFAULT_LANGUAGE
+    ) -> Movie | None:
+        json = await self._get_json(
+            TMDB_DETAILS_ENDPOINT.format(id), params={"language": language}
+        )
+
+        if not json:
+            return None
+        if json.get("genres"):
+            json["genre_ids"] = list(
+                filter(lambda id: id is not None, [g.get("id") for g in json["genres"]])
+            )
+
+        return await Movie.from_dict(self._format_movie_poster(json), False)
 
     async def search_movie(
         self, query: str, *, language: str = DEFAULT_LANGUAGE
@@ -77,10 +97,17 @@ class TMDBSession:
         )
 
         results = json.get("results")
-        if not all((results, len(results), json.get("total_results"))):
+        if not all(  # using one huge boolean properly asserts types, but i am not doing that
+            (
+                results,
+                isinstance(results, list),
+                len(results),  # type: ignore
+                json.get("total_results"),
+            )
+        ):
             return None
 
-        return await Movie.from_dict(self._format_movie_poster(results[0]))
+        return await Movie.from_dict(self._format_movie_poster(results[0]))  # type: ignore
 
     async def get_trending_movies(
         self,
@@ -92,10 +119,18 @@ class TMDBSession:
             TMDB_TRENDING_ENDPOINT.format(time_window), {"language": language}
         )
         results = json.get("results")
-        if not all((results, len(results), json.get("total_results"))):
+        if not all(
+            (
+                results,
+                isinstance(results, list),
+                len(results),  # type: ignore
+                json.get("total_results"),
+            )
+        ):
             return None
 
         movies: list[Movie] = [
-            await Movie.from_dict(self._format_movie_poster(r)) for r in results
+            await Movie.from_dict(self._format_movie_poster(r))
+            for r in results  # type: ignore
         ]
         return movies

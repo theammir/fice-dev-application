@@ -1,20 +1,9 @@
 from datetime import datetime
 from typing import Any
 
-from cachetools import LRUCache
+from cachetools import LRUCache, TTLCache
 from tortoise import fields
 from tortoise.models import Model
-
-
-class Genre(Model):
-    id = fields.IntField(primary_key=True)
-    name = fields.CharField(max_length=256)
-
-    cache = LRUCache(maxsize=1024)
-
-    @staticmethod
-    async def by_id(genre_id: int) -> "Genre | None":
-        return Genre.cache.get(genre_id) or (await Genre.get_or_none(id=genre_id))
 
 
 class Movie(Model):
@@ -28,23 +17,25 @@ class Movie(Model):
     average_rating = fields.FloatField()
     vote_count = fields.IntField()
 
+    view_cache = TTLCache(maxsize=1024, ttl=600)
+
     @staticmethod
-    async def from_dict(data: dict[str, Any]) -> "Movie":
-        return (
-            await Movie.update_or_create(
-                id=data["id"],
-                title=data.get("title") or data["original_title"],
-                original_title=data.get("original_title") or data["title"],
-                overview=data.get("overview") or "Опис не знайдено.",
-                poster_path=data["poster_path"],
-                genre_ids=data.get("genre_ids") or [],
-                release_date=datetime.strptime(
-                    data.get("release_date") or "1970-01-01", "%Y-%m-%d"
-                ),
-                average_rating=data.get("vote_average") or 0.0,
-                vote_count=data.get("vote_count") or 0,
-            )
-        )[0]
+    async def from_dict(data: dict[str, Any], save: bool = True) -> "Movie":
+        defaults = {
+            "title": data.get("title") or data["original_title"],
+            "original_title": data.get("original_title") or data["title"],
+            "overview": data.get("overview") or "Опис не знайдено.",
+            "poster_path": data["poster_path"],
+            "genre_ids": data.get("genre_ids") or [],
+            "release_date": datetime.strptime(
+                data.get("release_date") or "1970-01-01", "%Y-%m-%d"
+            ),
+            "average_rating": data.get("vote_average") or 0.0,
+            "vote_count": data.get("vote_count") or 0,
+        }
+        if save:  #  kwargs are for unique keys, everything else is `defaults`
+            return (await Movie.update_or_create(defaults=defaults, id=data["id"]))[0]
+        return Movie(**({"id": data["id"]} | defaults))
 
 
 class User(Model):

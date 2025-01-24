@@ -16,7 +16,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
-from db.models import Genre, Movie, User
+from db.models import Movie, User
 from tmdb import TMDBSession
 
 from .start import SPECIAL_SEARCH_TEXT, SPECIAL_TRENDING_TEXT, START_MARKUP
@@ -35,14 +35,17 @@ MOVIE_FORMAT_STR = """
 """
 
 
-async def format_movie(movie: Movie) -> str:
-    genres = [await Genre.by_id(id) for id in movie.genre_ids]  # type: ignore
-    genres: list[Genre] = list(filter(lambda g: g is not None, genres))
+def format_movie(movie: Movie) -> str:
+    genres = list(
+        filter(
+            lambda g: g, [TMDBSession.genre_name_of(id, "") for id in movie.genre_ids]
+        )
+    )
     return MOVIE_FORMAT_STR.format(
         title=movie.title,
         original_title=movie.original_title,
         overview=movie.overview,
-        genres=", ".join([g.name for g in genres]),
+        genres=", ".join(genres),
         release_date=movie.release_date.strftime("%d/%m/%Y"),
         rating=movie.average_rating,
         vote_count=movie.vote_count,
@@ -92,7 +95,38 @@ async def search_process_query(
         return
     await message.reply_photo(
         movie.poster_path,
-        await format_movie(movie),
+        format_movie(movie),
+        reply_markup=START_MARKUP,
+    )
+
+
+@router.message(F.text.casefold().startswith("/view_") & F.text.len() > len("/view_"))
+async def view_handler(message: Message, tmdb: TMDBSession):
+    assert message.text is not None
+
+    command_split = message.text.split("_")
+    assert len(command_split) > 1
+
+    id_str = command_split[1]
+    movie_id: int
+    try:
+        movie_id = int(id_str)
+    except ValueError:
+        await message.reply(
+            "💢 Неправильний параметр!\nЦя команда не створена для виклику вручну"
+        )
+        return
+    if not (movie := Movie.view_cache.get(movie_id)):
+        movie = await tmdb.get_movie_by_id(movie_id)
+        Movie.view_cache[movie_id] = movie
+
+    if not movie:
+        await message.reply("🔎 Фільму за цим параметром не знайдено")
+        return
+
+    await message.reply_photo(
+        movie.poster_path,
+        format_movie(movie),
         reply_markup=START_MARKUP,
     )
 
@@ -145,7 +179,7 @@ async def trending_handler(message: Message, tmdb: TMDBSession):
 
     await message.reply_photo(
         movies[0].poster_path,
-        await format_movie(movies[0]),
+        format_movie(movies[0]),
         reply_markup=paginator_markup(0),
     )
 
@@ -166,10 +200,8 @@ async def paginator_callback_handler(
 
     user_id = query.from_user.id
 
-    movies: list[Movie] = []
-    if user_id in User.trending_cache:
-        movies = User.trending_cache[user_id]
-    else:
+    movies: list[Movie] | None = []
+    if not (movies := User.trending_cache.get(user_id)):
         db_user = await User.by_id(query.from_user.id)
         await db_user.fetch_related("last_trending")
         movies = await db_user.last_trending.all()
@@ -190,6 +222,6 @@ async def paginator_callback_handler(
         InputMediaPhoto(media=movie.poster_path),
     )
     await query.message.edit_caption(
-        caption=await format_movie(movie),
+        caption=format_movie(movie),
         reply_markup=paginator_markup(current_index),
     )

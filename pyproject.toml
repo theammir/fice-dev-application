@@ -8,8 +8,10 @@ dependencies = [
     "aiogram>=3.17.0",
     "aiohttp[speedups]>=3.11.11",
     "asyncio>=3.4.3",
+    "cachetools>=5.5.1",
     "python-dotenv>=1.0.1",
     "rich>=13.9.4",
+    "tortoise-orm>=0.24.0",
 ]
 
 [tool.ruff]

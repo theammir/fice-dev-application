@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import logging
 import os
@@ -9,6 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.dispatcher.dispatcher import Dispatcher, loggers
 from aiogram.enums import ParseMode
 from rich.logging import RichHandler
+from tortoise import Tortoise, run_async
 
 import routers
 from tmdb import TMDBSession
@@ -28,8 +28,11 @@ async def main() -> None:
     tmdb_token = os.getenv("TMDB_AUTH_TOKEN")
     if not tmdb_token:
         raise ValueError("expected TMDB_AUTH_TOKEN in env")
-
     tmdb = TMDBSession(tmdb_token)
+
+    await Tortoise.init(db_url="sqlite://db.sqlite3", modules={"models": ["db.models"]})
+    await Tortoise.generate_schemas()
+    await tmdb.preload_genres()
 
     dp = Dispatcher(tmdb=tmdb)
     dp.include_routers(*[getattr(routers, r) for r in routers.__all__])
@@ -41,7 +44,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging._nameToLevel[(os.getenv("LOG") or "INFO").upper()],
         format="%(message)s",
         handlers=[
             RichHandler(rich_tracebacks=True, log_time_format="[%d/%m/%y %H:%M:%S]")
@@ -50,4 +53,4 @@ if __name__ == "__main__":
     loggers.event.setLevel(logging.WARNING)
 
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(main())
+        run_async(main())

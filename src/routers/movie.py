@@ -16,7 +16,8 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
-from tmdb import Movie, TMDBSession
+from db.models import Genre, Movie, User
+from tmdb import TMDBSession
 
 from .start import SPECIAL_SEARCH_TEXT, SPECIAL_TRENDING_TEXT, START_MARKUP
 
@@ -34,13 +35,15 @@ MOVIE_FORMAT_STR = """
 """
 
 
-def format_movie(movie: Movie) -> str:
+async def format_movie(movie: Movie) -> str:
+    genres = [await Genre.by_id(id) for id in movie.genre_ids]  # type: ignore
+    genres: list[Genre] = list(filter(lambda g: g is not None, genres))
     return MOVIE_FORMAT_STR.format(
         title=movie.title,
         original_title=movie.original_title,
         overview=movie.overview,
-        genres=", ".join(movie.genres),
-        release_date=movie.release_date.replace("-", "/"),
+        genres=", ".join([g.name for g in genres]),
+        release_date=movie.release_date.strftime("%d/%m/%Y"),
         rating=movie.average_rating,
         vote_count=movie.vote_count,
     )
@@ -89,7 +92,7 @@ async def search_process_query(
         return
     await message.reply_photo(
         movie.poster_path,
-        format_movie(movie),
+        await format_movie(movie),
         reply_markup=START_MARKUP,
     )
 
@@ -102,9 +105,6 @@ class PaginatorAction(IntEnum):
 class PaginatorCallback(CallbackData, prefix="page"):
     action: PaginatorAction
     current_index: int
-
-
-paginated_movies: dict[int, list[Movie]] = {}
 
 
 def paginator_markup(current_index: int):
@@ -145,10 +145,16 @@ async def trending_handler(message: Message, tmdb: TMDBSession):
 
     await message.reply_photo(
         movies[0].poster_path,
-        format_movie(movies[0]),
+        await format_movie(movies[0]),
         reply_markup=paginator_markup(0),
     )
-    paginated_movies[message.from_user.id] = movies
+
+    user_id = message.from_user.id
+    User.trending_cache[user_id] = movies
+
+    db_user = await User.by_id(user_id)
+    await db_user.last_trending.clear()
+    await db_user.last_trending.add(*movies)
 
 
 @router.callback_query(PaginatorCallback.filter())
@@ -158,23 +164,32 @@ async def paginator_callback_handler(
     if not query.message or isinstance(query.message, InaccessibleMessage):
         return
 
-    movies = paginated_movies.get(query.from_user.id)
+    user_id = query.from_user.id
+
+    movies: list[Movie] = []
+    if user_id in User.trending_cache:
+        movies = User.trending_cache[user_id]
+    else:
+        db_user = await User.by_id(query.from_user.id)
+        await db_user.fetch_related("last_trending")
+        movies = await db_user.last_trending.all()
+        User.trending_cache[user_id] = movies
+
     if not movies:
         await query.answer("💢 Список фільмів не знайдено!")
         return
-
-    await query.answer()
 
     current_index = callback_data.current_index
     current_index += 1 if callback_data.action == PaginatorAction.NEXT else -1
     current_index %= len(movies)
 
-    current_movie = movies[current_index]
+    movie = movies[current_index]
 
+    await query.answer()
     await query.message.edit_media(
-        InputMediaPhoto(media=current_movie.poster_path),
+        InputMediaPhoto(media=movie.poster_path),
     )
     await query.message.edit_caption(
-        caption=format_movie(current_movie),
+        caption=await format_movie(movie),
         reply_markup=paginator_markup(current_index),
     )

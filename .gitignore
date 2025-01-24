@@ -7,3 +7,5 @@ wheels/
 .venv
 
 .env
+
+*.sqlite*

@@ -40,9 +40,11 @@ class Movie(Model):
 
 class User(Model):
     id = fields.IntField(primary_key=True)
-    favourites = fields.ManyToManyField("models.Movie", related_name="favourite_of")
+    favourites = fields.ManyToManyField(
+        "models.Movie", related_name="favourite_of", through="user_favourites"
+    )
     last_trending = fields.ManyToManyField(
-        "models.Movie", related_name="last_trending_of"
+        "models.Movie", related_name="last_trending_of", through="user_trending"
     )
 
     trending_cache = LRUCache(maxsize=1024)

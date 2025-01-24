@@ -17,6 +17,7 @@ from aiogram.types import (
 )
 
 from db.models import Movie, User
+from routers.favourites import favourite_button
 from tmdb import TMDBSession
 
 from .start import SPECIAL_SEARCH_TEXT, SPECIAL_TRENDING_TEXT, START_MARKUP
@@ -57,7 +58,7 @@ class SearchState(StatesGroup):
 
 
 @router.message(F.text == SPECIAL_SEARCH_TEXT)
-@router.message(Command("search"))
+@router.message(Command("search"), F.from_user)
 async def search_handler(message: Message, state: FSMContext) -> None:
     await state.set_state(SearchState.query)
 
@@ -71,7 +72,8 @@ async def search_handler(message: Message, state: FSMContext) -> None:
 
 
 @router.message(F.text == SPECIAL_CANCEL_TEXT)
-async def search_cancel_handler(message: Message, state: FSMContext) -> None:
+@router.message(Command("cancel"), F.from_user)
+async def cancel_handler(message: Message, state: FSMContext) -> None:
     if await state.get_state() is None:
         return
 
@@ -96,11 +98,15 @@ async def search_process_query(
     await message.reply_photo(
         movie.poster_path,
         format_movie(movie),
-        reply_markup=START_MARKUP,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[favourite_button(movie.id)]]
+        ),
     )
 
 
-@router.message(F.text.casefold().startswith("/view_") & F.text.len() > len("/view_"))
+@router.message(F.from_user)
+@router.message(F.text.casefold().startswith("/view_"))
+@router.message(F.text.len() > len("/view_"))
 async def view_handler(message: Message, tmdb: TMDBSession):
     assert message.text is not None
 
@@ -116,17 +122,18 @@ async def view_handler(message: Message, tmdb: TMDBSession):
             "💢 Неправильний параметр!\nЦя команда не створена для виклику вручну"
         )
         return
-    if not (movie := Movie.view_cache.get(movie_id)):
-        movie = await tmdb.get_movie_by_id(movie_id)
-        Movie.view_cache[movie_id] = movie
 
-    if not movie:
+    if not (cached_movie := Movie.view_cache.get(movie_id)):
+        cached_movie = await tmdb.get_movie_by_id(movie_id)
+        Movie.view_cache[movie_id] = cached_movie
+
+    if not cached_movie:
         await message.reply("🔎 Фільму за цим параметром не знайдено")
         return
 
     await message.reply_photo(
-        movie.poster_path,
-        format_movie(movie),
+        cached_movie.poster_path,
+        format_movie(cached_movie),
         reply_markup=START_MARKUP,
     )
 
@@ -141,7 +148,7 @@ class PaginatorCallback(CallbackData, prefix="page"):
     current_index: int
 
 
-def paginator_markup(current_index: int):
+def paginator_markup(current_index: int, movie_id: int):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -157,7 +164,8 @@ def paginator_markup(current_index: int):
                         action=PaginatorAction.NEXT, current_index=current_index
                     ).pack(),
                 ),
-            ]
+            ],
+            [favourite_button(movie_id)],
         ]
     )
 
@@ -180,7 +188,7 @@ async def trending_handler(message: Message, tmdb: TMDBSession):
     await message.reply_photo(
         movies[0].poster_path,
         format_movie(movies[0]),
-        reply_markup=paginator_markup(0),
+        reply_markup=paginator_markup(0, movies[0].id),
     )
 
     user_id = message.from_user.id
@@ -200,22 +208,20 @@ async def paginator_callback_handler(
 
     user_id = query.from_user.id
 
-    movies: list[Movie] | None = []
-    if not (movies := User.trending_cache.get(user_id)):
-        db_user = await User.by_id(query.from_user.id)
+    if not (cached_movies := User.trending_cache.get(user_id)):
+        db_user = await User.by_id(user_id)
         await db_user.fetch_related("last_trending")
-        movies = await db_user.last_trending.all()
-        User.trending_cache[user_id] = movies
+        User.trending_cache[user_id] = cached_movies = await db_user.last_trending.all()
 
-    if not movies:
+    if not cached_movies:
         await query.answer("💢 Список фільмів не знайдено!")
         return
 
     current_index = callback_data.current_index
     current_index += 1 if callback_data.action == PaginatorAction.NEXT else -1
-    current_index %= len(movies)
+    current_index %= len(cached_movies)
 
-    movie = movies[current_index]
+    movie = cached_movies[current_index]
 
     await query.answer()
     await query.message.edit_media(
@@ -223,5 +229,5 @@ async def paginator_callback_handler(
     )
     await query.message.edit_caption(
         caption=format_movie(movie),
-        reply_markup=paginator_markup(current_index),
+        reply_markup=paginator_markup(current_index, movie.id),
     )

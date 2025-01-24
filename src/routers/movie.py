@@ -7,13 +7,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
+    ForceReply,
     InaccessibleMessage,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InputMediaPhoto,
-    KeyboardButton,
     Message,
-    ReplyKeyboardMarkup,
 )
 
 from db.models import Movie, User
@@ -23,8 +22,6 @@ from tmdb import TMDBSession
 from .start import SPECIAL_SEARCH_TEXT, SPECIAL_TRENDING_TEXT, START_MARKUP
 
 router = Router(name="/movie")
-
-SPECIAL_CANCEL_TEXT = "✨ Cancel"
 
 MOVIE_FORMAT_STR = """
 <b>Назва фільму</b>: {title} ({original_title})
@@ -61,24 +58,7 @@ class SearchState(StatesGroup):
 @router.message(Command("search"), F.from_user)
 async def search_handler(message: Message, state: FSMContext) -> None:
     await state.set_state(SearchState.query)
-
-    markup = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=SPECIAL_CANCEL_TEXT)]],
-        is_persistent=True,
-        resize_keyboard=True,
-    )
-
-    await message.reply("🔎 Уведіть назву фільму:", reply_markup=markup)
-
-
-@router.message(F.text == SPECIAL_CANCEL_TEXT)
-@router.message(Command("cancel"), F.from_user)
-async def cancel_handler(message: Message, state: FSMContext) -> None:
-    if await state.get_state() is None:
-        return
-
-    await state.clear()
-    await message.reply("🔎 Скасовано", reply_markup=START_MARKUP)
+    await message.reply("🔎 Уведіть назву фільму:", reply_markup=ForceReply())
 
 
 @router.message(SearchState.query, F.text)

@@ -17,7 +17,9 @@ class Movie(Model):
     average_rating = fields.FloatField()
     vote_count = fields.IntField()
 
+    search_cache = TTLCache(maxsize=1024, ttl=600)
     view_cache = TTLCache(maxsize=1024, ttl=600)
+    trending_cache = TTLCache(maxsize=1, ttl=600)
 
     @staticmethod
     async def from_dict(data: dict[str, Any], save: bool = True) -> "Movie":

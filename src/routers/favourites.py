@@ -77,7 +77,7 @@ async def favourite_callback_handler(
     if already_favourite:
         await db_user.favourites.remove(movie)
         User.favourites_cache[user_id].remove(movie)
-        await query.answer("❌ Фільм успішно видалено з обраних!")
+        await query.answer("🗑 Фільм успішно видалено з обраних!")
         return
 
     await db_user.favourites.add(movie)

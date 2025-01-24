@@ -89,8 +89,10 @@ async def search_process_query(
 
     await state.clear()
 
-    query = message.text
-    movie = await tmdb.search_movie(query)
+    query = message.text.lower()
+    if not (movie := Movie.search_cache.get(query)):
+        movie = await tmdb.search_movie(query)
+        Movie.search_cache[query] = movie
 
     if not movie:
         await message.reply("🔎 Результатів за вашим запитом не знайдено")
@@ -104,9 +106,7 @@ async def search_process_query(
     )
 
 
-@router.message(F.from_user)
-@router.message(F.text.casefold().startswith("/view_"))
-@router.message(F.text.len() > len("/view_"))
+@router.message(F.text.casefold().startswith("/view_") & F.text.len() > len("/view_"))
 async def view_handler(message: Message, tmdb: TMDBSession):
     assert message.text is not None
 
@@ -175,7 +175,10 @@ def paginator_markup(current_index: int, movie_id: int):
 async def trending_handler(message: Message, tmdb: TMDBSession):
     assert message.from_user is not None
 
-    movies = await tmdb.get_trending_movies(time_window="week")
+    if not (movies := Movie.trending_cache.get(None)):
+        movies = await tmdb.get_trending_movies(time_window="week")
+        Movie.trending_cache[None] = movies
+
     if not movies:
         await message.reply(
             (

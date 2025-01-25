@@ -11,7 +11,7 @@ from aiogram.types import (
 from db.models import Movie, User
 from routers.start import SPECIAL_FAVOURITES_TEXT
 
-router = Router(name="/favourites")
+router = Router(name="FAVOURITES")
 
 
 def favourite_button(movie_id: int) -> InlineKeyboardButton:
@@ -21,7 +21,9 @@ def favourite_button(movie_id: int) -> InlineKeyboardButton:
 
 
 @router.message(F.text == SPECIAL_FAVOURITES_TEXT)
-@router.message(Command("favourites"), F.from_user)
+@router.message(
+    Command("favourites", "favorites", "favourite", "favorite"), F.from_user
+)
 async def favourites_handler(message: Message):
     assert message.from_user is not None
 
@@ -39,10 +41,11 @@ async def favourites_handler(message: Message):
 
     reply_text = "Натисніть на команду біля назви фільму, щоб подивитись деталі:\n\n"
     reply_text += "\n".join(
-        "⭐ <b>{index}. {title} ({original_title})</b> {command}".format(
+        "⭐ <b>{index}. {title}</b> {command}".format(
             index=i + 1,
-            title=movie.title,
-            original_title=movie.original_title,
+            title=movie.title
+            if movie.title == movie.original_title
+            else f"{movie.title} ({movie.original_title})",
             command=f"/view_{movie.id}",
         )
         for i, movie in enumerate(movies)

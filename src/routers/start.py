@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 
-router = Router(name="/start")
+router = Router(name="START")
 
 SPECIAL_SEARCH_TEXT = "🔍 Пошук за назвою"
 SPECIAL_TRENDING_TEXT = "📈 Популярні фільми"

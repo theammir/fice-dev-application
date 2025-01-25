@@ -3,11 +3,25 @@ from typing import NoReturn
 
 import aiohttp
 from aiogram import Router
+from aiogram.exceptions import TelegramRetryAfter
+from aiogram.filters import ExceptionTypeFilter
 from aiogram.types import ErrorEvent
 
 from tmdb import TMDBException
 
-router = Router(name="/error")
+router = Router(name="ERROR")
+
+
+@router.error(ExceptionTypeFilter(TelegramRetryAfter))
+async def timeout_handler(event: ErrorEvent):
+    assert isinstance(event.exception, TelegramRetryAfter)
+
+    retry_after = event.exception.retry_after
+    WARNING_MESSAGE = f"⏰ Забагато спроб! Спробуйте через {retry_after} секунд"
+    if query := event.update.callback_query:
+        await query.answer(WARNING_MESSAGE)
+    elif message := event.update.message:
+        await message.reply(WARNING_MESSAGE)
 
 
 @router.error()

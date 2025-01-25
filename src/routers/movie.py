@@ -1,6 +1,7 @@
 from enum import IntEnum
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
@@ -21,26 +22,30 @@ from tmdb import TMDBSession
 
 from .start import SPECIAL_SEARCH_TEXT, SPECIAL_TRENDING_TEXT, START_MARKUP
 
-router = Router(name="/movie")
+router = Router(name="MOVIE")
 
-MOVIE_FORMAT_STR = """
-<b>Назва фільму</b>: {title} ({original_title})
+
+def format_movie(movie: Movie) -> str:
+    MOVIE_FORMAT_STR = """
+<b>Назва фільму</b>: {title}
 
 <b>Опис</b>: {overview}
 <b>Жанри</b>: {genres}
 <b>Дата виходу</b>: <code>{release_date}</code>
 <b>Рейтинг</b>: <code>{rating}/10</code> (<i>{vote_count}</i> голосів)
-"""
-
-
-def format_movie(movie: Movie) -> str:
+    """
+    title = (
+        movie.title
+        if movie.title == movie.original_title
+        else f"{movie.title} ({movie.original_title})"
+    )
     genres = list(
         filter(
             lambda g: g, [TMDBSession.genre_name_of(id, "") for id in movie.genre_ids]
         )
     )
     return MOVIE_FORMAT_STR.format(
-        title=movie.title,
+        title=title,
         original_title=movie.original_title,
         overview=movie.overview,
         genres=", ".join(genres),
@@ -55,10 +60,10 @@ class SearchState(StatesGroup):
 
 
 @router.message(F.text == SPECIAL_SEARCH_TEXT)
-@router.message(Command("search"), F.from_user)
+@router.message(Command("search", "find"), F.from_user)
 async def search_handler(message: Message, state: FSMContext) -> None:
     await state.set_state(SearchState.query)
-    await message.reply("🔎 Уведіть назву фільму:", reply_markup=ForceReply())
+    await message.reply("🔎 Уведіть назву фільму:", reply_markup=START_MARKUP)
 
 
 @router.message(SearchState.query, F.text)
@@ -75,7 +80,9 @@ async def search_process_query(
         Movie.search_cache[query] = movie
 
     if not movie:
-        await message.reply("🔎 Результатів за вашим запитом не знайдено")
+        await message.reply(
+            "🔎 Результатів за вашим запитом не знайдено", reply_markup=START_MARKUP
+        )
         return
     await message.reply_photo(
         movie.poster_path,
@@ -151,13 +158,13 @@ def paginator_markup(current_index: int, movie_id: int):
 
 
 @router.message(F.text == SPECIAL_TRENDING_TEXT)
-@router.message(Command("trending"), F.from_user)
+@router.message(Command("trending", "popular"), F.from_user)
 async def trending_handler(message: Message, tmdb: TMDBSession):
     assert message.from_user is not None
 
-    if not (movies := Movie.trending_cache.get(None)):
+    if not (movies := Movie.trending_cache.get(0)):
         movies = await tmdb.get_trending_movies(time_window="week")
-        Movie.trending_cache[None] = movies
+        Movie.trending_cache[0] = movies
 
     if not movies:
         await message.reply(
@@ -206,7 +213,6 @@ async def paginator_callback_handler(
 
     movie = cached_movies[current_index]
 
-    await query.answer()
     await query.message.edit_media(
         InputMediaPhoto(media=movie.poster_path),
     )
@@ -214,3 +220,4 @@ async def paginator_callback_handler(
         caption=format_movie(movie),
         reply_markup=paginator_markup(current_index, movie.id),
     )
+    await query.answer()

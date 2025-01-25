@@ -16,22 +16,25 @@ from tmdb import TMDBSession
 dotenv.load_dotenv()
 
 
-async def main() -> None:
-    bot_token = os.getenv("BOT_TOKEN")
-    if not bot_token:
-        raise ValueError("expected BOT_TOKEN in env")
+def expect_env(key: str) -> str:
+    value = os.getenv(key)
+    if not value:
+        raise ValueError(f"expected {key} in env")
+    return value
 
+
+async def main() -> None:
+    bot_token = expect_env("BOT_TOKEN")
     bot = aiogram.Bot(
         bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
 
-    tmdb_token = os.getenv("TMDB_AUTH_TOKEN")
-    if not tmdb_token:
-        raise ValueError("expected TMDB_AUTH_TOKEN in env")
+    tmdb_token = expect_env("TMDB_AUTH_TOKEN")
     tmdb = TMDBSession(tmdb_token)
     await tmdb.preload_genres()
 
-    await Tortoise.init(db_url="sqlite://db.sqlite3", modules={"models": ["db.models"]})
+    db_url = expect_env("DB_URL")
+    await Tortoise.init(db_url=db_url, modules={"models": ["db.models"]})
     await Tortoise.generate_schemas()
 
     dp = Dispatcher(tmdb=tmdb)

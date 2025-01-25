@@ -9,6 +9,7 @@ SPECIAL_TRENDING_TEXT = "📈 Популярні фільми"
 SPECIAL_FAVOURITES_TEXT = "⭐ Список обраного"
 SPECIAL_HELP_TEXT = " Інформація"
 
+
 START_MARKUP = ReplyKeyboardMarkup(
     keyboard=[
         [
@@ -37,4 +38,14 @@ async def start_handler(message: Message):
 
 @router.message(F.text == SPECIAL_HELP_TEXT)
 async def help_handler(message: Message):
-    await message.reply("TBA")
+    HELP_MESSAGE_TEXT = """
+Бот для пошуку та зберігання фільмів.
+Сурси та інструкція: https://github.com/theammir/fice-dev-application
+
+<b>Основні команди:</b>
+/start
+/search
+/trending
+/favourites
+    """
+    await message.reply(HELP_MESSAGE_TEXT)

@@ -1,14 +1,12 @@
 from enum import IntEnum
 
 from aiogram import F, Router
-from aiogram.exceptions import TelegramRetryAfter
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
-    ForceReply,
     InaccessibleMessage,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -28,7 +26,7 @@ router = Router(name="MOVIE")
 def format_movie(movie: Movie) -> str:
     MOVIE_FORMAT_STR = """
 <b>Назва фільму</b>: {title}
-
+{trailer}
 <b>Опис</b>: {overview}
 <b>Жанри</b>: {genres}
 <b>Дата виходу</b>: <code>{release_date}</code>
@@ -39,6 +37,9 @@ def format_movie(movie: Movie) -> str:
         if movie.title == movie.original_title
         else f"{movie.title} ({movie.original_title})"
     )
+    trailer = (
+        f"<a href='{movie.trailer}'>(дивитись трейлер)</a>\n" if movie.trailer else ""
+    )
     genres = list(
         filter(
             lambda g: g, [TMDBSession.genre_name_of(id, "") for id in movie.genre_ids]
@@ -46,7 +47,7 @@ def format_movie(movie: Movie) -> str:
     )
     return MOVIE_FORMAT_STR.format(
         title=title,
-        original_title=movie.original_title,
+        trailer=trailer,
         overview=movie.overview,
         genres=", ".join(genres),
         release_date=movie.release_date.strftime("%d/%m/%Y"),
@@ -57,6 +58,9 @@ def format_movie(movie: Movie) -> str:
 
 class SearchState(StatesGroup):
     query = State()
+
+
+# TODO: Only use reply markups in DMs
 
 
 @router.message(F.text == SPECIAL_SEARCH_TEXT)
@@ -175,10 +179,18 @@ async def trending_handler(message: Message, tmdb: TMDBSession):
         )
         return
 
+    movie = movies[0]
+    if not movie.trailer:
+        trailer = await tmdb.get_movie_trailer(movie.id)
+        if trailer:
+            movie.trailer = trailer
+            await movie.save(update_fields=("trailer",), force_update=True)
+            Movie.trending_cache[0][0].trailer = trailer
+
     await message.reply_photo(
-        movies[0].poster_path,
-        format_movie(movies[0]),
-        reply_markup=paginator_markup(0, movies[0].id),
+        movie.poster_path,
+        format_movie(movie),
+        reply_markup=paginator_markup(0, movie.id),
     )
 
     user_id = message.from_user.id
@@ -191,7 +203,7 @@ async def trending_handler(message: Message, tmdb: TMDBSession):
 
 @router.callback_query(PaginatorCallback.filter())
 async def paginator_callback_handler(
-    query: CallbackQuery, callback_data: PaginatorCallback
+    query: CallbackQuery, callback_data: PaginatorCallback, tmdb: TMDBSession
 ):
     if not query.message or isinstance(query.message, InaccessibleMessage):
         return
@@ -212,6 +224,14 @@ async def paginator_callback_handler(
     current_index %= len(cached_movies)
 
     movie = cached_movies[current_index]
+    if not movie.trailer:
+        trailer = await tmdb.get_movie_trailer(movie.id)
+        if trailer:
+            movie.trailer = trailer
+            await movie.save(update_fields=("trailer",), force_update=True)
+            if Movie.trending_cache:
+                Movie.trending_cache[0][current_index].trailer = trailer
+            User.trending_cache[user_id][current_index].trailer = trailer
 
     await query.message.edit_media(
         InputMediaPhoto(media=movie.poster_path),

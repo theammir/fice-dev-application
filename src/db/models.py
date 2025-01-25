@@ -10,6 +10,7 @@ class Movie(Model):
     id = fields.IntField(primary_key=True)
     title = fields.CharField(max_length=256)
     original_title = fields.CharField(max_length=256)
+    trailer = fields.CharField(max_length=256)
     overview = fields.TextField()
     poster_path = fields.CharField(max_length=256)
     genre_ids = fields.JSONField(field_type=list[int])
@@ -17,6 +18,7 @@ class Movie(Model):
     average_rating = fields.FloatField()
     vote_count = fields.IntField()
 
+    # TODO: make a query cache and an id cache
     search_cache = TTLCache(maxsize=1024, ttl=600)
     view_cache = TTLCache(maxsize=1024, ttl=600)
     trending_cache = TTLCache(maxsize=1, ttl=600)
@@ -26,7 +28,8 @@ class Movie(Model):
         defaults = {
             "title": data.get("title") or data["original_title"],
             "original_title": data.get("original_title") or data["title"],
-            "overview": data.get("overview") or "Опис не знайдено.",
+            "trailer": data.get("trailer") or "",
+            "overview": data.get("overview") or "опис не знайдено.",
             "poster_path": data["poster_path"],
             "genre_ids": data.get("genre_ids") or [],
             "release_date": datetime.strptime(

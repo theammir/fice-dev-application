@@ -36,6 +36,16 @@ class TMDBSession:
     def genre_name_of(id: int, default: Any) -> str | Any:
         return TMDBSession.__genres_table.get(id, default)
 
+    async def preload_genres(self, language: str = DEFAULT_LANGUAGE):
+        json = await self._get_json(TMDB_GENRE_LIST_ENDPOINT, {"language": language})
+        genres = json.get("genres")
+        if not genres:
+            raise RuntimeError("api didn't return valid genres list")
+
+        TMDBSession.__genres_table = {
+            id: name for g in genres if all([id := g.get("id"), name := g.get("name")])
+        }
+
     async def _get_json(self, endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
         headers = {
             "accept": "application/json",
@@ -55,16 +65,6 @@ class TMDBSession:
                 raise TMDBException(json.get("status"), json.get("message"))
 
             return json
-
-    async def preload_genres(self, language: str = DEFAULT_LANGUAGE):
-        json = await self._get_json(TMDB_GENRE_LIST_ENDPOINT, {"language": language})
-        genres = json.get("genres")
-        if not genres:
-            raise RuntimeError("api didn't return valid genres list")
-
-        TMDBSession.__genres_table = {
-            id: name for g in genres if all([id := g.get("id"), name := g.get("name")])
-        }
 
     def _format_movie_poster(self, movie: dict[str, Any]):
         if poster_path := movie.get("poster_path"):
@@ -141,15 +141,13 @@ class TMDBSession:
     async def search_movie(
         self, query: str, *, language: str = DEFAULT_LANGUAGE
     ) -> Movie | None:
-        movie_json = await self._get_json(
+        json = await self._get_json(
             TMDB_SEARCH_ENDPOINT, {"query": query, "language": language}
         )
-        movie_results = movie_json.get("results")
-        if not all(
-            (self._is_results_valid(movie_results), movie_json.get("total_results"))
-        ):
+        results = json.get("results")
+        if not all((self._is_results_valid(results), json.get("total_results"))):
             return None
-        movie = movie_results[0]  # type: ignore
+        movie = results[0]  # type: ignore
         movie["trailer"] = await self.get_movie_trailer(movie["id"])
 
         return await Movie.from_dict(self._format_movie_poster(movie))

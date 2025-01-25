@@ -62,9 +62,6 @@ class SearchState(StatesGroup):
     query = State()
 
 
-# TODO: Only use reply markups in DMs
-
-
 @router.message(F.text == SPECIAL_SEARCH_TEXT)
 @router.message(Command("search", "find"), F.from_user)
 async def search_handler(message: Message, state: FSMContext) -> None:

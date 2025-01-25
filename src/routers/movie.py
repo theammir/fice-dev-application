@@ -7,11 +7,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery,
+    ForceReply,
     InaccessibleMessage,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InputMediaPhoto,
     Message,
+    ReplyKeyboardRemove,
 )
 
 from db.models import Movie, User
@@ -67,7 +69,8 @@ class SearchState(StatesGroup):
 @router.message(Command("search", "find"), F.from_user)
 async def search_handler(message: Message, state: FSMContext) -> None:
     await state.set_state(SearchState.query)
-    await message.reply("🔎 Уведіть назву фільму:", reply_markup=START_MARKUP)
+    markup = START_MARKUP if message.chat.type == "private" else ForceReply()
+    await message.reply("🔎 Уведіть назву фільму:", reply_markup=markup)
 
 
 @router.message(SearchState.query, F.text)
@@ -78,6 +81,8 @@ async def search_process_query(
 
     await state.clear()
 
+    markup = START_MARKUP if message.chat.type == "private" else ReplyKeyboardRemove()
+
     query = message.text.lower()
     if not (movie := Movie.query_lookup_cache.get(query)):
         movie = await tmdb.search_movie(query)
@@ -85,7 +90,7 @@ async def search_process_query(
 
     if not movie:
         await message.reply(
-            "🔎 Результатів за вашим запитом не знайдено", reply_markup=START_MARKUP
+            "🔎 Результатів за вашим запитом не знайдено", reply_markup=markup
         )
         return
     await message.reply_photo(
@@ -114,6 +119,8 @@ async def view_handler(message: Message, tmdb: TMDBSession):
         )
         return
 
+    markup = START_MARKUP if message.chat.type == "private" else None
+
     if not (cached_movie := Movie.id_lookup_cache.get(movie_id)):
         cached_movie = await tmdb.get_movie_by_id(movie_id)
         Movie.id_lookup_cache[movie_id] = cached_movie
@@ -125,7 +132,7 @@ async def view_handler(message: Message, tmdb: TMDBSession):
     await message.reply_photo(
         cached_movie.poster_path,
         format_movie(cached_movie),
-        reply_markup=START_MARKUP,
+        reply_markup=markup,
     )
 
 
@@ -201,7 +208,10 @@ async def trending_handler(message: Message, tmdb: TMDBSession):
     await db_user.last_trending.add(*movies)
 
 
-@router.callback_query(PaginatorCallback.filter())
+@router.callback_query(
+    PaginatorCallback.filter(),
+    F.message.reply_to_message.from_user.id == F.from_user.id,
+)
 async def paginator_callback_handler(
     query: CallbackQuery, callback_data: PaginatorCallback, tmdb: TMDBSession
 ):
@@ -228,8 +238,7 @@ async def paginator_callback_handler(
     movie = cached_movies[current_index]
     # PERF: when has no available trailer, makes requests repeatedly
     if not movie.trailer:
-        trailer = await tmdb.get_movie_trailer(movie.id)
-        if trailer:
+        if trailer := await tmdb.get_movie_trailer(movie.id):
             movie.trailer = trailer
             await movie.save(update_fields=("trailer",), force_update=True)
             if Movie.currently_trending_cache:

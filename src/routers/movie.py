@@ -79,9 +79,9 @@ async def search_process_query(
     await state.clear()
 
     query = message.text.lower()
-    if not (movie := Movie.search_cache.get(query)):
+    if not (movie := Movie.query_lookup_cache.get(query)):
         movie = await tmdb.search_movie(query)
-        Movie.search_cache[query] = movie
+        Movie.query_lookup_cache[query] = movie
 
     if not movie:
         await message.reply(
@@ -114,9 +114,9 @@ async def view_handler(message: Message, tmdb: TMDBSession):
         )
         return
 
-    if not (cached_movie := Movie.view_cache.get(movie_id)):
+    if not (cached_movie := Movie.id_lookup_cache.get(movie_id)):
         cached_movie = await tmdb.get_movie_by_id(movie_id)
-        Movie.view_cache[movie_id] = cached_movie
+        Movie.id_lookup_cache[movie_id] = cached_movie
 
     if not cached_movie:
         await message.reply("🔎 Фільму за цим параметром не знайдено")
@@ -166,9 +166,9 @@ def paginator_markup(current_index: int, movie_id: int):
 async def trending_handler(message: Message, tmdb: TMDBSession):
     assert message.from_user is not None
 
-    if not (movies := Movie.trending_cache.get(0)):
+    if not (movies := Movie.currently_trending_cache.get(0)):
         movies = await tmdb.get_trending_movies(time_window="week")
-        Movie.trending_cache[0] = movies
+        Movie.currently_trending_cache[0] = movies
 
     if not movies:
         await message.reply(
@@ -185,7 +185,7 @@ async def trending_handler(message: Message, tmdb: TMDBSession):
         if trailer:
             movie.trailer = trailer
             await movie.save(update_fields=("trailer",), force_update=True)
-            Movie.trending_cache[0][0].trailer = trailer
+            Movie.currently_trending_cache[0][0].trailer = trailer
 
     await message.reply_photo(
         movie.poster_path,
@@ -194,7 +194,7 @@ async def trending_handler(message: Message, tmdb: TMDBSession):
     )
 
     user_id = message.from_user.id
-    User.trending_cache[user_id] = movies
+    User.last_trending_cache[user_id] = movies
 
     db_user = await User.by_id(user_id)
     await db_user.last_trending.clear()
@@ -210,10 +210,12 @@ async def paginator_callback_handler(
 
     user_id = query.from_user.id
 
-    if not (cached_movies := User.trending_cache.get(user_id)):
+    if not (cached_movies := User.last_trending_cache.get(user_id)):
         db_user = await User.by_id(user_id)
         await db_user.fetch_related("last_trending")
-        User.trending_cache[user_id] = cached_movies = await db_user.last_trending.all()
+        User.last_trending_cache[user_id] = (
+            cached_movies
+        ) = await db_user.last_trending.all()
 
     if not cached_movies:
         await query.answer("💢 Список фільмів не знайдено!")
@@ -224,14 +226,15 @@ async def paginator_callback_handler(
     current_index %= len(cached_movies)
 
     movie = cached_movies[current_index]
+    # PERF: when has no available trailer, makes requests repeatedly
     if not movie.trailer:
         trailer = await tmdb.get_movie_trailer(movie.id)
         if trailer:
             movie.trailer = trailer
             await movie.save(update_fields=("trailer",), force_update=True)
-            if Movie.trending_cache:
-                Movie.trending_cache[0][current_index].trailer = trailer
-            User.trending_cache[user_id][current_index].trailer = trailer
+            if Movie.currently_trending_cache:
+                Movie.currently_trending_cache[0][current_index].trailer = trailer
+            User.last_trending_cache[user_id][current_index].trailer = trailer
 
     await query.message.edit_media(
         InputMediaPhoto(media=movie.poster_path),

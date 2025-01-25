@@ -18,10 +18,9 @@ class Movie(Model):
     average_rating = fields.FloatField()
     vote_count = fields.IntField()
 
-    # TODO: make a query cache and an id cache
-    search_cache = TTLCache(maxsize=1024, ttl=600)
-    view_cache = TTLCache(maxsize=1024, ttl=600)
-    trending_cache = TTLCache(maxsize=1, ttl=600)
+    query_lookup_cache = TTLCache(maxsize=1024, ttl=600)
+    id_lookup_cache = TTLCache(maxsize=1024, ttl=600)
+    currently_trending_cache = TTLCache(maxsize=1, ttl=600)
 
     @staticmethod
     async def from_dict(data: dict[str, Any], save: bool = True) -> "Movie":
@@ -52,7 +51,7 @@ class User(Model):
         "models.Movie", related_name="last_trending_of", through="user_trending"
     )
 
-    trending_cache = LRUCache(maxsize=1024)
+    last_trending_cache = LRUCache(maxsize=1024)
     favourites_cache = LRUCache(maxsize=1024)
 
     @staticmethod
